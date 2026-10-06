@@ -1,0 +1,14 @@
+{
+  "name": "braincache",
+  "version": "0.1.0",
+  "description": "A personal content vault for saving, organizing, and retrieving online content.",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
