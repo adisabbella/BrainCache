@@ -88,7 +88,23 @@ contentSchema.index({ userId: 1, normalizedUrl: 1 }, { unique: true });
 // Supports listing a user's content (default sort by newest).
 contentSchema.index({ userId: 1, createdAt: -1 });
 
-// Supports category filtering (future milestone).
+// Supports category filtering.
 contentSchema.index({ userId: 1, category: 1, createdAt: -1 });
+
+// Text search index across the searchable fields (Milestone 4).
+// MongoDB allows only one text index per collection; all fields go here.
+contentSchema.index(
+  {
+    title: 'text',
+    description: 'text',
+    domain: 'text',
+    tags: 'text',
+    note: 'text',
+  },
+  {
+    name: 'content_text_search',
+    weights: { title: 10, tags: 5, domain: 3, description: 2, note: 1 },
+  }
+);
 
 export const Content: Model<IContent> = model<IContent>('Content', contentSchema);

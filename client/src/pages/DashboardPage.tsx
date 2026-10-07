@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { contentApi } from '../services/content';
+import type { ContentListParams, PaginationMeta } from '../services/content';
 import { CATEGORIES } from '../types/content';
 import type { ContentItem, UpdateContentBody } from '../types/content';
 
@@ -15,34 +16,97 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // ── List state ──────────────────────────────────────────────────────────────
   const [items, setItems] = useState<ContentItem[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
+  // ── Search / filter / sort state ────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');  // debounced value
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+  const [page, setPage] = useState(1);
+
+  // ── View state ───────────────────────────────────────────────────────────────
   const [view, setView] = useState<ViewState>('list');
   const [editingItem, setEditingItem] = useState<ContentItem | null>(null);
 
+  // ── Misc state ───────────────────────────────────────────────────────────────
   const [loggingOut, setLoggingOut] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [randomItem, setRandomItem] = useState<ContentItem | null>(null);
+  const [randomLoading, setRandomLoading] = useState(false);
+  const [randomError, setRandomError] = useState<string | null>(null);
+  const [showRandom, setShowRandom] = useState(false);
 
-  // ── Load content ────────────────────────────────────────────────────────────
-  async function fetchContent() {
-    setLoadingList(true);
-    setListError(null);
-    const { data, error } = await contentApi.list();
-    if (error) {
-      setListError(error);
-    } else {
-      setItems(data?.items ?? []);
-    }
-    setLoadingList(false);
+  // ── Debounce search input by ~300 ms ─────────────────────────────────────────
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleSearchChange(value: string) {
+    setSearchInput(value);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setSearchQuery(value);
+      setPage(1); // reset to page 1 on new search
+    }, 300);
   }
 
-  useEffect(() => {
-    void fetchContent();
+  // ── Load content ─────────────────────────────────────────────────────────────
+  const fetchContent = useCallback(async (params: ContentListParams) => {
+    setLoadingList(true);
+    setListError(null);
+    const { data, error } = await contentApi.list(params);
+    if (error) {
+      setListError(error);
+    } else if (data) {
+      setItems(data.items);
+      setPagination(data.pagination);
+    }
+    setLoadingList(false);
   }, []);
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    void fetchContent({
+      search: searchQuery || undefined,
+      category: categoryFilter || undefined,
+      tag: tagFilter || undefined,
+      sort,
+      page,
+      limit: 20,
+    });
+  }, [searchQuery, categoryFilter, tagFilter, sort, page, fetchContent]);
+
+  // Reset page to 1 when filter/sort changes (but NOT when page itself changes)
+  useEffect(() => {
+    setPage(1);
+  }, [categoryFilter, tagFilter, sort]);
+
+  // ── Surprise Me ──────────────────────────────────────────────────────────────
+  async function handleSurpriseMe() {
+    setRandomLoading(true);
+    setRandomError(null);
+    setRandomItem(null);
+    setShowRandom(true);
+
+    const { data, error } = await contentApi.getRandom();
+    setRandomLoading(false);
+
+    if (error) {
+      setRandomError(error);
+      return;
+    }
+
+    if (data?.empty || !data?.content) {
+      setRandomItem(null);
+    } else {
+      setRandomItem(data.content);
+    }
+  }
+
+  // ── Handlers ─────────────────────────────────────────────────────────────────
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -62,7 +126,15 @@ export default function DashboardPage() {
       return;
     }
     setDeleteConfirmId(null);
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    // Refresh the current page rather than mutating local state so pagination stays accurate.
+    void fetchContent({
+      search: searchQuery || undefined,
+      category: categoryFilter || undefined,
+      tag: tagFilter || undefined,
+      sort,
+      page,
+      limit: 20,
+    });
   }
 
   function handleSaved(item: ContentItem) {
@@ -77,9 +149,21 @@ export default function DashboardPage() {
     });
     setView('list');
     setEditingItem(null);
+    // Refresh so pagination totals are accurate after a create.
+    void fetchContent({
+      search: searchQuery || undefined,
+      category: categoryFilter || undefined,
+      tag: tagFilter || undefined,
+      sort,
+      page: 1,
+      limit: 20,
+    });
+    setPage(1);
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  const isSearchActive = !!(searchQuery || categoryFilter || tagFilter);
 
   return (
     <div style={s.page}>
@@ -96,6 +180,11 @@ export default function DashboardPage() {
           </div>
           <div style={s.headerRight}>
             <span style={s.userBadge}>{user?.username}</span>
+            {view === 'list' && (
+              <button id="surprise-me-btn" onClick={handleSurpriseMe} style={s.surpriseBtn} title="Get a random saved item">
+                🎲 Surprise Me
+              </button>
+            )}
             {view === 'list' && (
               <button id="add-content-btn" onClick={() => setView('add')} style={s.primaryBtn}>
                 + Save URL
@@ -116,18 +205,104 @@ export default function DashboardPage() {
       {/* Main */}
       <main style={s.main}>
         <div style={s.container}>
-          {view === 'list' && (
-            <ContentList
-              items={items}
-              loading={loadingList}
-              error={listError}
-              onRetry={fetchContent}
-              onEdit={handleEdit}
-              onDeleteRequest={(id) => setDeleteConfirmId(id)}
-              deleteConfirmId={deleteConfirmId}
-              onDeleteConfirm={handleDelete}
-              onDeleteCancel={() => setDeleteConfirmId(null)}
+
+          {/* Random item modal/banner */}
+          {showRandom && view === 'list' && (
+            <RandomBanner
+              item={randomItem}
+              loading={randomLoading}
+              error={randomError}
+              onClose={() => { setShowRandom(false); setRandomItem(null); setRandomError(null); }}
+              onAgain={handleSurpriseMe}
             />
+          )}
+
+          {view === 'list' && (
+            <>
+              {/* Search / filter / sort toolbar */}
+              <div style={s.toolbar}>
+                <input
+                  id="search-input"
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search title, description, tags, notes…"
+                  style={s.searchInput}
+                />
+                <select
+                  id="category-filter"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  style={s.filterSelect}
+                >
+                  <option value="">All categories</option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <input
+                  id="tag-filter"
+                  type="text"
+                  value={tagFilter}
+                  onChange={(e) => { setTagFilter(e.target.value.trim()); setPage(1); }}
+                  placeholder="Filter by tag…"
+                  style={{ ...s.filterSelect, width: '140px' }}
+                />
+                <select
+                  id="sort-select"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as 'newest' | 'oldest')}
+                  style={s.filterSelect}
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+                {isSearchActive && (
+                  <button
+                    id="clear-filters-btn"
+                    onClick={() => {
+                      setSearchInput('');
+                      setSearchQuery('');
+                      setCategoryFilter('');
+                      setTagFilter('');
+                      setSort('newest');
+                      setPage(1);
+                    }}
+                    style={s.clearBtn}
+                  >
+                    ✕ Clear
+                  </button>
+                )}
+              </div>
+
+              <ContentList
+                items={items}
+                loading={loadingList}
+                error={listError}
+                onRetry={() => void fetchContent({
+                  search: searchQuery || undefined,
+                  category: categoryFilter || undefined,
+                  tag: tagFilter || undefined,
+                  sort,
+                  page,
+                  limit: 20,
+                })}
+                onEdit={handleEdit}
+                onDeleteRequest={(id) => setDeleteConfirmId(id)}
+                deleteConfirmId={deleteConfirmId}
+                onDeleteConfirm={handleDelete}
+                onDeleteCancel={() => setDeleteConfirmId(null)}
+                isSearchActive={isSearchActive}
+              />
+
+              {/* Pagination controls */}
+              {pagination && pagination.totalPages > 1 && !loadingList && !listError && (
+                <PaginationControls
+                  pagination={pagination}
+                  onPageChange={(p) => setPage(p)}
+                />
+              )}
+            </>
           )}
 
           {view === 'add' && (
@@ -147,6 +322,105 @@ export default function DashboardPage() {
   );
 }
 
+// ── Random Banner ─────────────────────────────────────────────────────────────
+
+function RandomBanner({
+  item,
+  loading,
+  error,
+  onClose,
+  onAgain,
+}: {
+  item: ContentItem | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onAgain: () => void;
+}) {
+  return (
+    <div style={s.randomBanner}>
+      <div style={s.randomBannerHeader}>
+        <span style={s.randomBannerTitle}>🎲 Surprise Pick</span>
+        <button id="close-random-btn" onClick={onClose} style={s.iconBtn} title="Close">✕</button>
+      </div>
+
+      {loading && <p style={s.muted}>Finding something for you…</p>}
+
+      {error && <p style={{ color: '#f87171', fontSize: '0.875rem', margin: 0 }}>{error}</p>}
+
+      {!loading && !error && !item && (
+        <p style={s.muted}>Your vault is empty. Save something first!</p>
+      )}
+
+      {!loading && !error && item && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <div style={s.cardMeta}>
+            <span style={s.categoryBadge}>{item.category}</span>
+            {item.domain && <span style={s.domain}>{item.domain}</span>}
+          </div>
+          {item.title && <p style={s.cardTitle}>{item.title}</p>}
+          <a href={item.url} target="_blank" rel="noopener noreferrer" style={s.cardUrl}>
+            {item.url.length > 80 ? item.url.slice(0, 80) + '…' : item.url}
+          </a>
+          {item.tags.length > 0 && (
+            <div style={s.tagList}>
+              {item.tags.map((tag) => (
+                <span key={tag} style={s.tag}>#{tag}</span>
+              ))}
+            </div>
+          )}
+          {item.note && <p style={s.note}>📝 {item.note}</p>}
+        </div>
+      )}
+
+      {!loading && (
+        <button id="surprise-again-btn" onClick={onAgain} style={{ ...s.secondaryBtn, marginTop: '0.75rem' }}>
+          🎲 Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Pagination Controls ───────────────────────────────────────────────────────
+
+function PaginationControls({
+  pagination,
+  onPageChange,
+}: {
+  pagination: PaginationMeta;
+  onPageChange: (page: number) => void;
+}) {
+  const { page, totalPages } = pagination;
+
+  return (
+    <div style={s.paginationRow}>
+      <button
+        id="pagination-prev"
+        onClick={() => onPageChange(page - 1)}
+        disabled={!pagination.hasPreviousPage}
+        style={{ ...s.secondaryBtn, opacity: pagination.hasPreviousPage ? 1 : 0.4 }}
+      >
+        ← Prev
+      </button>
+
+      <span style={s.paginationInfo}>
+        Page {page} of {totalPages}
+        <span style={s.paginationTotal}> ({pagination.totalItems} items)</span>
+      </span>
+
+      <button
+        id="pagination-next"
+        onClick={() => onPageChange(page + 1)}
+        disabled={!pagination.hasNextPage}
+        style={{ ...s.secondaryBtn, opacity: pagination.hasNextPage ? 1 : 0.4 }}
+      >
+        Next →
+      </button>
+    </div>
+  );
+}
+
 // ── Content List ──────────────────────────────────────────────────────────────
 
 function ContentList({
@@ -159,6 +433,7 @@ function ContentList({
   deleteConfirmId,
   onDeleteConfirm,
   onDeleteCancel,
+  isSearchActive,
 }: {
   items: ContentItem[];
   loading: boolean;
@@ -169,6 +444,7 @@ function ContentList({
   deleteConfirmId: string | null;
   onDeleteConfirm: (id: string) => void;
   onDeleteCancel: () => void;
+  isSearchActive: boolean;
 }) {
   if (loading) return <p style={s.muted}>Loading your content…</p>;
   if (error) return (
@@ -177,12 +453,23 @@ function ContentList({
       <button onClick={onRetry} style={s.secondaryBtn}>Retry</button>
     </div>
   );
-  if (items.length === 0) return (
-    <div style={s.emptyState}>
-      <p style={s.emptyTitle}>Your BrainCache is empty.</p>
-      <p style={s.muted}>Click <strong>+ Save URL</strong> to add your first link.</p>
-    </div>
-  );
+  if (items.length === 0) {
+    return (
+      <div style={s.emptyState}>
+        {isSearchActive ? (
+          <>
+            <p style={s.emptyTitle}>No results found.</p>
+            <p style={s.muted}>Try different search terms or clear your filters.</p>
+          </>
+        ) : (
+          <>
+            <p style={s.emptyTitle}>Your BrainCache is empty.</p>
+            <p style={s.muted}>Click <strong>+ Save URL</strong> to add your first link.</p>
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={s.list}>
@@ -520,9 +807,16 @@ const s: Record<string, React.CSSProperties> = {
   userBadge: { fontSize: '0.8125rem', color: 'rgba(255,255,255,0.4)', marginRight: '0.25rem' },
   primaryBtn: { backgroundColor: '#7c3aed', border: 'none', borderRadius: '0.5rem', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 600, color: 'white', cursor: 'pointer' },
   secondaryBtn: { backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '0.5rem', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 500, color: 'rgba(255,255,255,0.6)', cursor: 'pointer' },
+  surpriseBtn: { backgroundColor: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '0.5rem', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 500, color: '#a78bfa', cursor: 'pointer' },
   logoutBtn: { backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem', padding: '0.4rem 0.875rem', fontSize: '0.8125rem', fontWeight: 500, color: 'rgba(255,255,255,0.5)', cursor: 'pointer' },
   main: { padding: '2rem 1.5rem' },
   container: { maxWidth: '56rem', margin: '0 auto' },
+  // Toolbar
+  toolbar: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem', alignItems: 'center' },
+  searchInput: { flex: '1 1 220px', minWidth: '180px', backgroundColor: '#17171a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '0.45rem 0.75rem', fontSize: '0.875rem', color: 'white', outline: 'none' },
+  filterSelect: { backgroundColor: '#17171a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '0.45rem 0.6rem', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', outline: 'none' },
+  clearBtn: { backgroundColor: 'transparent', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '0.5rem', padding: '0.4rem 0.75rem', fontSize: '0.8125rem', color: '#f87171', cursor: 'pointer' },
+  // List
   list: { display: 'flex', flexDirection: 'column', gap: '0.75rem' },
   card: { backgroundColor: '#17171a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' },
   cardTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
@@ -542,6 +836,15 @@ const s: Record<string, React.CSSProperties> = {
   emptyTitle: { fontSize: '1.125rem', fontWeight: 600, color: 'rgba(255,255,255,0.7)', marginBottom: '0.5rem' },
   muted: { fontSize: '0.875rem', color: 'rgba(255,255,255,0.35)', margin: 0 },
   errorBox: { backgroundColor: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: '0.75rem', padding: '1.5rem', textAlign: 'center', color: '#f87171' },
+  // Random banner
+  randomBanner: { backgroundColor: '#1a1025', border: '1px solid rgba(124,58,237,0.3)', borderRadius: '0.75rem', padding: '1.25rem 1.5rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' },
+  randomBannerHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  randomBannerTitle: { fontSize: '0.875rem', fontWeight: 600, color: '#a78bfa' },
+  // Pagination
+  paginationRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.5rem' },
+  paginationInfo: { fontSize: '0.875rem', color: 'rgba(255,255,255,0.5)' },
+  paginationTotal: { fontSize: '0.8125rem', color: 'rgba(255,255,255,0.3)' },
+  // Forms
   formCard: { backgroundColor: '#17171a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '0.75rem', padding: '2rem', maxWidth: '36rem', margin: '0 auto' },
   formTitle: { fontSize: '1.25rem', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: '1.5rem', marginTop: 0 },
   form: { display: 'flex', flexDirection: 'column', gap: '1rem' },

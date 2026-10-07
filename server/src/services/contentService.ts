@@ -1,7 +1,7 @@
 import { AppError } from '../errors/AppError';
 import { contentRepository } from '../repositories/contentRepository';
 import { normalizeUrl } from '../utils/normalizeUrl';
-import type { CreateContentInput, UpdateContentInput } from '../validators/contentSchemas';
+import type { ContentQueryInput, CreateContentInput, UpdateContentInput } from '../validators/contentSchemas';
 
 /** Safe public shape of a content item returned to clients. */
 export interface SafeContent {
@@ -16,6 +16,16 @@ export interface SafeContent {
   note?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Pagination metadata included in collection responses. */
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }
 
 function toSafeContent(doc: {
@@ -47,10 +57,37 @@ function toSafeContent(doc: {
 }
 
 export const contentService = {
-  /** Returns all content items belonging to the authenticated user. */
-  async listForUser(userId: string): Promise<SafeContent[]> {
-    const items = await contentRepository.findAllByUser(userId);
-    return items.map(toSafeContent);
+  /**
+   * Returns a paginated, optionally searched/filtered page of the user's content.
+   * All queries are scoped to the authenticated user — ownership is enforced in
+   * the repository layer and cannot be bypassed through query parameters.
+   */
+  async listForUserWithQuery(
+    userId: string,
+    query: ContentQueryInput
+  ): Promise<{ items: SafeContent[]; pagination: PaginationMeta }> {
+    const { items, totalItems } = await contentRepository.findWithQuery(userId, query);
+    const totalPages = Math.ceil(totalItems / query.limit);
+
+    const pagination: PaginationMeta = {
+      page: query.page,
+      limit: query.limit,
+      totalItems,
+      totalPages,
+      hasNextPage: query.page < totalPages,
+      hasPreviousPage: query.page > 1,
+    };
+
+    return { items: items.map(toSafeContent), pagination };
+  },
+
+  /**
+   * Returns a single random content item belonging to the authenticated user.
+   * Returns null if the user has no saved content.
+   */
+  async getRandom(userId: string): Promise<SafeContent | null> {
+    const item = await contentRepository.findRandom(userId);
+    return item ? toSafeContent(item) : null;
   },
 
   /** Returns a single content item, verifying ownership. */

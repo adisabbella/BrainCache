@@ -31,8 +31,48 @@ async function request<T>(
   }
 }
 
+export interface ContentListParams {
+  search?: string;
+  category?: string;
+  tag?: string;
+  sort?: 'newest' | 'oldest';
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface ContentListResponse {
+  items: ContentItem[];
+  pagination: PaginationMeta;
+}
+
+export interface RandomContentResponse {
+  content: ContentItem | null;
+  empty: boolean;
+}
+
 export const contentApi = {
-  list: () => request<{ items: ContentItem[] }>('/api/content'),
+  list: (params?: ContentListParams) => {
+    const qs = new URLSearchParams();
+    if (params?.search)   qs.set('search', params.search);
+    if (params?.category) qs.set('category', params.category);
+    if (params?.tag)      qs.set('tag', params.tag);
+    if (params?.sort)     qs.set('sort', params.sort);
+    if (params?.page != null)  qs.set('page', String(params.page));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return request<ContentListResponse>(`/api/content${query ? `?${query}` : ''}`);
+  },
+
+  getRandom: () => request<RandomContentResponse>('/api/content/random'),
 
   getOne: (id: string) => request<{ item: ContentItem }>(`/api/content/${id}`),
 

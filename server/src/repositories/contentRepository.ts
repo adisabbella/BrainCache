@@ -1,12 +1,54 @@
-import { Types } from 'mongoose';
+import { FilterQuery, Types } from 'mongoose';
 import { Content, IContent } from '../models/Content';
+import type { ContentQueryInput } from '../validators/contentSchemas';
+
+export interface PaginatedResult {
+  items: IContent[];
+  totalItems: number;
+}
 
 export const contentRepository = {
-  /** Returns all content items for a user, newest first. */
-  async findAllByUser(userId: string): Promise<IContent[]> {
-    return Content.find({ userId: new Types.ObjectId(userId) })
-      .sort({ createdAt: -1 })
-      .exec();
+  /** Returns paginated, filtered, searched content for a user. */
+  async findWithQuery(userId: string, query: ContentQueryInput): Promise<PaginatedResult> {
+    const { search, category, tag, sort, page, limit } = query;
+
+    // Always scope to the authenticated user — this is a security boundary.
+    const filter: FilterQuery<IContent> = { userId: new Types.ObjectId(userId) };
+
+    if (category) {
+      filter['category'] = category;
+    }
+
+    if (tag) {
+      // tags is stored as an array; match documents that contain this tag.
+      filter['tags'] = tag.toLowerCase().replace(/\s+/g, '-');
+    }
+
+    if (search) {
+      // MongoDB full-text search — uses the text index defined on the model.
+      filter['$text'] = { $search: search };
+    }
+
+    const sortOrder: Record<string, 1 | -1> = { createdAt: sort === 'oldest' ? 1 : -1 };
+
+    const skip = (page - 1) * limit;
+
+    const [items, totalItems] = await Promise.all([
+      Content.find(filter).sort(sortOrder).skip(skip).limit(limit).exec(),
+      Content.countDocuments(filter).exec(),
+    ]);
+
+    return { items, totalItems };
+  },
+
+  /** Returns a single random content item belonging to the user, or null. */
+  async findRandom(userId: string): Promise<IContent | null> {
+    const results = await Content.aggregate<IContent>([
+      { $match: { userId: new Types.ObjectId(userId) } },
+      { $sample: { size: 1 } },
+    ]).exec();
+
+    return results[0] ?? null;
   },
 
   /** Returns a single content item by _id (no ownership check here). */
@@ -59,5 +101,12 @@ export const contentRepository = {
     if (!Types.ObjectId.isValid(id)) return false;
     const result = await Content.deleteOne({ _id: id }).exec();
     return result.deletedCount === 1;
+  },
+
+  /** Returns all content items for a user, newest first (kept for internal use). */
+  async findAllByUser(userId: string): Promise<IContent[]> {
+    return Content.find({ userId: new Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .exec();
   },
 };

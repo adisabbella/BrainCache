@@ -12,6 +12,11 @@ router.use(authenticate);
 // GET /api/content
 router.get('/', contentController.list);
 
+// GET /api/content/random
+// IMPORTANT: this must be registered BEFORE /:id so Express does not treat
+// the literal string "random" as a dynamic :id parameter.
+router.get('/random', contentController.getRandom);
+
 // GET /api/content/:id
 router.get('/:id', contentController.getOne);
 

@@ -83,3 +83,40 @@ export const UpdateContentSchema = z
 
 export type CreateContentInput = z.infer<typeof CreateContentSchema>;
 export type UpdateContentInput = z.infer<typeof UpdateContentSchema>;
+
+/** Maximum number of items per page the server will honour. */
+export const MAX_PAGE_LIMIT = 100;
+
+/** Schema for GET /api/content query parameters. */
+export const ContentQuerySchema = z.object({
+  search: z.string().trim().max(200).optional(),
+
+  category: z
+    .enum(CATEGORIES, { error: `Category must be one of: ${CATEGORIES.join(', ')}.` })
+    .optional(),
+
+  tag: z.string().trim().max(50).optional(),
+
+  sort: z.enum(['newest', 'oldest']).default('newest'),
+
+  page: z
+    .string()
+    .optional()
+    .transform((v) => (v !== undefined ? parseInt(v, 10) : 1))
+    .pipe(z.number().int().min(1, 'page must be at least 1').default(1)),
+
+  limit: z
+    .string()
+    .optional()
+    .transform((v) => (v !== undefined ? parseInt(v, 10) : 20))
+    .pipe(
+      z
+        .number()
+        .int()
+        .min(1, 'limit must be at least 1')
+        .max(MAX_PAGE_LIMIT, `limit must be at most ${MAX_PAGE_LIMIT}`)
+        .default(20)
+    ),
+});
+
+export type ContentQueryInput = z.infer<typeof ContentQuerySchema>;
