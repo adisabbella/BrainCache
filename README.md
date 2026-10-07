@@ -8,176 +8,173 @@ Save the things you don't want to lose.
 
 ## What is BrainCache?
 
-BrainCache solves a simple problem: people frequently discover useful articles, videos, tutorials,
-and other online content, but later struggle to find them again.
+BrainCache solves a common problem: people frequently discover useful articles, videos, tutorials, and tools across the web, but later struggle to find them again. Browser bookmarks quickly become cluttered, and copy-pasting links into notes lacks structured retrieval.
 
-BrainCache provides a centralized personal space for storing links with metadata such as categories,
-tags, and personal notes, making content easy to find again later.
+BrainCache provides a clean, personal vault where links are stored alongside automatic metadata (title, description, preview thumbnail, domain), structured categories, searchable tags, and private notes.
 
-The core workflow is: **Save - Organize - Search - Retrieve - Revisit**
+The core workflow: **Save → Organize → Search → Retrieve → Revisit**
 
 ---
 
-## Technology Stack
+## Features
+
+- **Authentication & Security**: Secure registration and login using salted bcrypt password hashing and JWT sessions stored in HTTP-only, SameSite cookies.
+- **Automated Metadata Extraction**: When a URL is saved, the server fetches Open Graph tags, page titles, and meta descriptions with a strict size and timeout boundary.
+- **Duplicate URL Prevention**: Intelligent URL normalization (stripping tracking parameters like `utm_*` and `fbclid`, lowercasing hosts, trimming trailing slashes) prevents duplicate entries per user.
+- **Categorization & Tagging**: Organize items by 18 predefined categories (Programming, AI & ML, Education, etc.) and custom hyphenated tags.
+- **Full-Text Search & Filtering**: Fast text searching indexed across title, description, domain, and notes, combined with category and tag filters.
+- **Sorting & Pagination**: Browse items sorted newest or oldest with server-side pagination.
+- **"Surprise Me" Discovery**: Rediscover saved content with single-click random retrieval powered by MongoDB `$sample`.
+- **Public Share Links**: Share specific items externally with revocable, cryptographically secure share tokens (SHA-256 hashed in database).
+- **Abuse Prevention**: Rate-limited authentication and link-scraping endpoints, strict request size limits, and security headers via Helmet.
+
+---
+
+## Tech Stack
 
 ### Frontend
-- React 19
-- TypeScript
-- Vite
-- TailwindCSS v4
-- React Router v7
+- **React 19**
+- **TypeScript**
+- **Vite**
+- **React Router v7**
+- **Vanilla CSS** (dark mode, responsive design)
 
 ### Backend
-- Node.js
-- Express 4
-- TypeScript
-
-### Planned (future milestones)
-- MongoDB + Mongoose (database)
-- Zod (validation)
-- JWT + HTTP-only cookies (authentication)
-
----
-
-## Current Status
-
-**Milestone 1 - Project Foundation** (complete)
-
-The project foundation is in place:
-- React frontend starts and runs successfully
-- Express backend starts and runs successfully
-- Health endpoint (`GET /api/health`) is implemented and tested
-- Frontend communicates with backend via Vite dev proxy
-- TypeScript compiles cleanly on both sides
-- Clean, extensible folder structure ready for future milestones
-
----
-
-## Local Setup
-
-### Prerequisites
-- Node.js 18 or later
-- npm
-
-### Install dependencies
-
-```bash
-# Install root dev dependencies
-npm install
-
-# Install frontend dependencies
-npm install --prefix client
-
-# Install backend dependencies
-npm install --prefix server
-```
-
-### Environment configuration
-
-Copy the example environment files:
-
-```bash
-# Backend
-copy server\.env.example server\.env
-```
-
-The default values in `.env.example` work for local development.
-
----
-
-## Running the Application
-
-### Start both frontend and backend together
-
-```bash
-npm run dev
-```
-
-### Or start individually
-
-```bash
-# Frontend only (http://localhost:5173)
-npm run dev:client
-
-# Backend only (http://localhost:3001)
-npm run dev:server
-```
-
----
-
-## Health Endpoint
-
-```
-GET http://localhost:3001/api/health
-```
-
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "status": "ok"
-  }
-}
-```
-
-The Vite dev proxy also exposes this at:
-```
-GET http://localhost:5173/api/health
-```
+- **Node.js** & **Express**
+- **TypeScript**
+- **MongoDB** with **Mongoose**
+- **Zod** (strict runtime request validation)
+- **jsonwebtoken** & **bcryptjs** (authentication)
+- **helmet**, **cookie-parser**, & **express-rate-limit** (security)
 
 ---
 
 ## Repository Structure
 
 ```
-braincache/
-|-- client/              React frontend (Vite + TypeScript + TailwindCSS)
-|   |-- src/
-|   |   |-- components/  Reusable UI components (future milestones)
-|   |   |-- pages/       Application screens (future milestones)
-|   |   |-- layouts/     Shared page structures (future milestones)
-|   |   |-- hooks/       Reusable React hooks (future milestones)
-|   |   |-- services/    Frontend API communication
-|   |   |-- context/     Global state (future milestones)
-|   |   |-- types/       TypeScript types (future milestones)
-|   |   |-- utils/       Utility functions (future milestones)
-|   |   |-- lib/         Third-party library configs (future milestones)
-|   |   |-- App.tsx      Root application component
-|   |   `-- main.tsx     Application entry point
-|-- server/              Express backend (Node.js + TypeScript)
-|   |-- src/
-|   |   |-- config/      Centralized configuration
-|   |   |-- middleware/  Express middleware
-|   |   |-- routes/      API route definitions
-|   |   |-- app.ts       Express app factory
-|   |   `-- index.ts     Server entry point
-|-- docs/                Project documentation (source of truth)
-|-- .editorconfig        Editor configuration
-|-- .gitignore           Git ignore rules
-|-- .prettierrc          Prettier formatting configuration
-|-- package.json         Root scripts
-`-- README.md            This file
+BrainCache/
+├── client/                      # React frontend
+│   ├── src/
+│   │   ├── components/          # Reusable UI components (e.g. ProtectedRoute)
+│   │   ├── context/             # AuthContext session provider
+│   │   ├── pages/               # DashboardPage, LoginPage, RegisterPage, SharePage
+│   │   ├── services/            # API client layer (authApi, contentApi)
+│   │   ├── types/               # TypeScript interfaces and shared constants
+│   │   ├── App.tsx              # App routing and route guards
+│   │   ├── main.tsx             # React entry point
+│   │   └── index.css            # Base styles and animations
+│   ├── index.html
+│   ├── vite.config.ts
+│   └── package.json
+├── server/                      # Express backend
+│   ├── src/
+│   │   ├── config/              # Centralized environment configuration
+│   │   ├── controllers/         # Request handling and HTTP responses
+│   │   ├── db/                  # MongoDB connection management
+│   │   ├── errors/              # AppError custom error class
+│   │   ├── middleware/          # JWT auth, Zod validation, error handling
+│   │   ├── models/              # Mongoose schemas (User, Content)
+│   │   ├── repositories/        # Database query abstractions
+│   │   ├── routes/              # Express route declarations (auth, content, share, health)
+│   │   ├── services/            # Core business logic and external calls
+│   │   ├── utils/               # Metadata scraping, URL normalization, share tokens
+│   │   ├── validators/          # Zod validation schemas
+│   │   ├── app.ts               # Express application factory
+│   │   └── index.ts             # Server entry point
+│   ├── tsconfig.json
+│   └── package.json
+├── docs/                        # Architecture decisions and API documentation
+└── README.md
 ```
 
 ---
 
-## Planned Milestones
+## Local Setup
 
-| Milestone | Feature Group |
-|-----------|---------------|
-| M1 (done) | Project Foundation |
-| M2 | Authentication (register, login, logout, JWT, cookies) |
-| M3 | Content Management (save, view, edit, delete URLs) |
-| M4 | Search, Filtering, Pagination, Random Retrieval |
-| M5 | Sharing and Metadata Extraction |
-| M6 | Security Hardening |
-| M7 | Final UI, Testing, and Cleanup |
+### Prerequisites
+- **Node.js** (v18 or higher)
+- **MongoDB** (local instance or MongoDB Atlas cluster URI)
+- **npm**
+
+### 1. Clone & Install Dependencies
+
+```bash
+# Install root dev dependencies
+npm install
+
+# Install client dependencies
+cd client && npm install && cd ..
+
+# Install server dependencies
+cd server && npm install && cd ..
+```
+
+### 2. Configure Environment Variables
+
+Create `.env` inside the `server/` directory:
+
+```bash
+cp server/.env.example server/.env
+```
+
+Set the following variables in `server/.env`:
+
+```env
+PORT=3001
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+MONGODB_URI=mongodb://localhost:27017/braincache
+JWT_SECRET=your-secure-random-secret-key-at-least-32-chars
+```
+
+### 3. Run the Application
+
+You can run both client and server concurrently from the root directory:
+
+```bash
+npm run dev
+```
+
+Or run them individually in separate terminals:
+
+```bash
+# Terminal 1: Backend (http://localhost:3001)
+npm run dev:server
+
+# Terminal 2: Frontend (http://localhost:5173)
+npm run dev:client
+```
+
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## Documentation
+## API Overview
 
-All project requirements, architecture decisions, and design specifications are in the `docs/` folder.
+### Health
+- `GET /api/health` — Service health check
 
-The documentation is the source of truth for this project.
+### Authentication
+- `POST /api/auth/register` — Register a new account
+- `POST /api/auth/login` — Login and receive HTTP-only session cookie
+- `POST /api/auth/logout` — Clear session cookie
+- `GET /api/auth/me` — Retrieve current authenticated user profile
+
+### Content
+- `GET /api/content` — List saved items with search, filter, sort, and pagination
+- `GET /api/content/random` — Retrieve a random item ("Surprise Me")
+- `GET /api/content/:id` — Get single item details
+- `POST /api/content` — Save a new URL (with automatic metadata scraping)
+- `PATCH /api/content/:id` — Update category, tags, title, description, or notes
+- `DELETE /api/content/:id` — Delete a saved item
+- `POST /api/content/:id/share` — Enable public sharing for an item
+- `DELETE /api/content/:id/share` — Disable public sharing
+
+### Public Share
+- `GET /api/share/:token` — View shared item publicly (no authentication required)
+
+---
+
+## License
+
+MIT

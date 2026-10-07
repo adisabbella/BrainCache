@@ -5,7 +5,7 @@ import { generateShareToken, hashShareToken } from '../utils/shareToken';
 import { normalizeUrl } from '../utils/normalizeUrl';
 import type { ContentQueryInput, CreateContentInput, UpdateContentInput } from '../validators/contentSchemas';
 
-/** Safe shape returned to the authenticated owner. Includes isShared status. */
+/** Shape returned to the authenticated owner. */
 export interface SafeContent {
   id: string;
   userId: string;
@@ -23,8 +23,8 @@ export interface SafeContent {
 }
 
 /**
- * Safe public shape — never exposes userId, note, or any internal fields.
- * Only returned via the public share endpoint.
+ * Shape returned via the public share endpoint.
+ * Never exposes userId, note, or any internal fields.
  */
 export interface PublicContent {
   title?: string;
@@ -36,7 +36,6 @@ export interface PublicContent {
   thumbnailUrl?: string;
 }
 
-/** Pagination metadata included in collection responses. */
 export interface PaginationMeta {
   page: number;
   limit: number;
@@ -98,13 +97,16 @@ function toPublicContent(doc: {
   };
 }
 
+function extractDomain(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return undefined;
+  }
+}
+
 export const contentService = {
-  /**
-   * Returns a paginated, optionally searched/filtered page of the user's content.
-   * All queries are scoped to the authenticated user — ownership is enforced in
-   * the repository layer and cannot be bypassed through query parameters.
-   */
-  async listForUserWithQuery(
+  async listForUser(
     userId: string,
     query: ContentQueryInput
   ): Promise<{ items: SafeContent[]; pagination: PaginationMeta }> {
@@ -123,21 +125,15 @@ export const contentService = {
     return { items: items.map(toSafeContent), pagination };
   },
 
-  /**
-   * Returns a single random content item belonging to the authenticated user.
-   * Returns null if the user has no saved content.
-   */
   async getRandom(userId: string): Promise<SafeContent | null> {
     const item = await contentRepository.findRandom(userId);
     return item ? toSafeContent(item) : null;
   },
 
-  /** Returns a single content item, verifying ownership. */
   async getOne(userId: string, contentId: string): Promise<SafeContent> {
     const item = await contentRepository.findById(contentId);
 
-    // Return 404 for both "not found" and "belongs to another user"
-    // to avoid leaking the existence of other users' content.
+    // Return 404 for both "not found" and "wrong owner" to avoid leaking existence of other users' content.
     if (!item || String(item.userId) !== userId) {
       throw new AppError(404, 'NOT_FOUND', 'Content not found.');
     }
@@ -145,42 +141,27 @@ export const contentService = {
     return toSafeContent(item);
   },
 
-  /** Creates a new content item for the authenticated user. */
   async create(userId: string, input: CreateContentInput): Promise<SafeContent> {
-    const normalized = normalizeUrl(input.url);
+    const normalizedUrl = normalizeUrl(input.url);
 
-    // --- Metadata extraction (best-effort, never blocks save) ---
-    // Run metadata fetch concurrently. If it fails for any reason, proceed anyway.
+    // Metadata fetch is best-effort — failures never block saving.
     let metadata: Awaited<ReturnType<typeof fetchUrlMetadata>> = null;
     try {
       metadata = await fetchUrlMetadata(input.url);
     } catch {
-      // Swallow — metadata is optional enrichment.
+      // intentionally swallowed
     }
 
-    // User-supplied values take priority over extracted metadata.
     const title = input.title || metadata?.title || undefined;
     const description = input.description || metadata?.description || undefined;
     const thumbnailUrl = metadata?.thumbnailUrl || undefined;
-
-    let domain = input.domain;
-    if (!domain) {
-      domain =
-        metadata?.domain ||
-        (() => {
-          try {
-            return new URL(input.url).hostname.replace(/^www\./, '');
-          } catch {
-            return undefined;
-          }
-        })();
-    }
+    const domain = input.domain || metadata?.domain || extractDomain(input.url);
 
     try {
       const item = await contentRepository.create({
         userId,
         url: input.url,
-        normalizedUrl: normalized,
+        normalizedUrl,
         title,
         description,
         domain,
@@ -191,7 +172,7 @@ export const contentService = {
       });
       return toSafeContent(item);
     } catch (err: unknown) {
-      // MongoDB duplicate-key error on (userId, normalizedUrl)
+      // MongoDB duplicate-key on (userId, normalizedUrl) — user already saved this URL.
       if (
         typeof err === 'object' &&
         err !== null &&
@@ -204,13 +185,11 @@ export const contentService = {
     }
   },
 
-  /** Updates an existing content item, verifying ownership first. */
   async update(
     userId: string,
     contentId: string,
     input: UpdateContentInput
   ): Promise<SafeContent> {
-    // Verify ownership
     const existing = await contentRepository.findById(contentId);
     if (!existing || String(existing.userId) !== userId) {
       throw new AppError(404, 'NOT_FOUND', 'Content not found.');
@@ -224,7 +203,6 @@ export const contentService = {
     return toSafeContent(updated);
   },
 
-  /** Deletes an existing content item, verifying ownership first. */
   async delete(userId: string, contentId: string): Promise<void> {
     const existing = await contentRepository.findById(contentId);
     if (!existing || String(existing.userId) !== userId) {
@@ -235,9 +213,8 @@ export const contentService = {
   },
 
   /**
-   * Enables public sharing for a content item.
-   * Generates a cryptographically secure token, stores only its hash.
-   * Returns the raw token (caller embeds it in the public URL).
+   * Generates a cryptographically secure token, stores only its SHA-256 hash.
+   * The raw token is returned so the caller can embed it in the public URL.
    */
   async enableSharing(userId: string, contentId: string): Promise<{ shareToken: string }> {
     const existing = await contentRepository.findById(contentId);
@@ -256,10 +233,6 @@ export const contentService = {
     return { shareToken: rawToken };
   },
 
-  /**
-   * Disables public sharing for a content item.
-   * Immediately invalidates any previously issued share links.
-   */
   async disableSharing(userId: string, contentId: string): Promise<void> {
     const existing = await contentRepository.findById(contentId);
     if (!existing || String(existing.userId) !== userId) {
@@ -270,9 +243,8 @@ export const contentService = {
   },
 
   /**
-   * Retrieves the public representation of a shared content item by raw token.
-   * Returns only safe public fields — never exposes userId, note, or internals.
-   * Returns 404 whether the token doesn't exist OR sharing has been disabled,
+   * Returns the public view of a shared item by raw token.
+   * Returns 404 whether sharing is disabled or the token doesn't exist,
    * so callers cannot probe for token existence.
    */
   async getPublicByToken(rawToken: string): Promise<PublicContent> {

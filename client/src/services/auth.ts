@@ -1,11 +1,7 @@
 import type { User } from '../types/auth';
 
-/**
- * All requests use credentials: 'include' so the browser sends the
- * HTTP-only authentication cookie automatically.
- * The JWT is never read or stored by JavaScript.
- */
-
+// credentials: 'include' sends the HTTP-only auth cookie automatically.
+// The JWT is never read or stored by JavaScript.
 async function request<T>(
   url: string,
   options?: RequestInit

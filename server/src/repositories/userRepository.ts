@@ -1,9 +1,5 @@
 import { IUser, User } from '../models/User';
 
-/**
- * Data access layer for User documents.
- * Business logic lives in AuthService, not here.
- */
 export const userRepository = {
   async findByEmail(email: string): Promise<IUser | null> {
     return User.findOne({ email: email.toLowerCase().trim() });

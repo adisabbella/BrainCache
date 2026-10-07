@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { contentController } from '../controllers/contentController';
 import { authenticate } from '../middleware/authenticate';
 import { validate } from '../middleware/validate';
@@ -6,33 +7,31 @@ import { CreateContentSchema, UpdateContentSchema } from '../validators/contentS
 
 const router = Router();
 
-// All content endpoints require authentication.
+// 30 creates per 15 minutes — prevents abuse of the metadata-fetching HTTP request.
+const createContentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT',
+      message: 'Too many requests. Please try again later.',
+    },
+  },
+});
+
 router.use(authenticate);
 
-// GET /api/content
 router.get('/', contentController.list);
-
-// GET /api/content/random
-// IMPORTANT: this must be registered BEFORE /:id so Express does not treat
-// the literal string "random" as a dynamic :id parameter.
+// /random must be registered before /:id or Express treats "random" as a dynamic :id value.
 router.get('/random', contentController.getRandom);
-
-// GET /api/content/:id
 router.get('/:id', contentController.getOne);
-
-// POST /api/content
-router.post('/', validate(CreateContentSchema), contentController.create);
-
-// PATCH /api/content/:id
+router.post('/', createContentLimiter, validate(CreateContentSchema), contentController.create);
 router.patch('/:id', validate(UpdateContentSchema), contentController.update);
-
-// DELETE /api/content/:id
 router.delete('/:id', contentController.delete);
-
-// POST /api/content/:id/share — enable sharing
 router.post('/:id/share', contentController.enableSharing);
-
-// DELETE /api/content/:id/share — disable sharing
 router.delete('/:id/share', contentController.disableSharing);
 
 export default router;

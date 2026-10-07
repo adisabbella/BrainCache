@@ -9,7 +9,6 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ): void {
-  // Known application errors
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,
@@ -21,7 +20,7 @@ export function errorHandler(
     return;
   }
 
-  // Zod v4 validation errors — use .issues (v4 dropped .errors)
+  // Zod v4 uses .issues (v4 dropped .errors)
   if (err instanceof ZodError) {
     const message = err.issues
       .map((issue) => {
@@ -56,7 +55,6 @@ export function errorHandler(
     return;
   }
 
-  // Unknown error — log server-side but do not leak details
   console.error('[Error]', err.message);
   if (config.isDevelopment) {
     console.error(err.stack);

@@ -4,11 +4,11 @@ import { createApp } from './app';
 import { config } from './config';
 import { connectDatabase } from './db/connection';
 
+// Use Google/Cloudflare DNS — system DNS may block SRV lookups needed by mongodb+srv://
 dns.setDefaultResultOrder('ipv4first');
-dns.setServers(['8.8.8.8', '1.1.1.1']); // Use Google/Cloudflare DNS — system DNS blocks SRV lookups needed by mongodb+srv://
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 async function start() {
-  // Connect to MongoDB first — the server should not start without it
   await connectDatabase();
 
   const app = createApp();
@@ -16,7 +16,6 @@ async function start() {
   app.listen(config.port, () => {
     console.log('[BrainCache] Server running on http://localhost:' + config.port);
     console.log('[BrainCache] Environment: ' + config.nodeEnv);
-    console.log('[BrainCache] Health: http://localhost:' + config.port + '/api/health');
   });
 }
 

@@ -35,7 +35,6 @@ const userSchema = new Schema<IUser>(
   }
 );
 
-// Index to make lookups by email fast (used on every login)
 userSchema.index({ email: 1 });
 
 export const User: Model<IUser> = model<IUser>('User', userSchema);

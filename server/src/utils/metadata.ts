@@ -1,12 +1,11 @@
-﻿/**
+/**
  * Best-effort URL metadata extraction.
  *
- * This module fetches the HTML of a URL and extracts basic metadata from
- * Open Graph tags and standard HTML head elements.
+ * Fetches the HTML of a URL and extracts basic metadata from Open Graph tags
+ * and standard HTML head elements.
  *
- * Critical contract: this function MUST NOT throw. If anything goes wrong
- * (network error, timeout, parse failure, etc.) it returns null so that the
- * caller can proceed with whatever user-supplied data is available.
+ * This function must not throw — on any failure it returns null so the caller
+ * can proceed with whatever user-supplied data is available.
  */
 
 export interface UrlMetadata {
@@ -16,13 +15,8 @@ export interface UrlMetadata {
   thumbnailUrl?: string;
 }
 
-/** Timeout in milliseconds for the external HTTP request. */
 const FETCH_TIMEOUT_MS = 5_000;
 
-/**
- * Extracts the content of a meta tag by property or name attribute.
- * Returns undefined if not found or empty.
- */
 function extractMeta(html: string, attr: string, value: string): string | undefined {
   const re = new RegExp(
     `<meta[^>]+(?:${attr})=["'](${value})["'][^>]+content=["']([^"']+)["']|` +
@@ -37,18 +31,11 @@ function extractMeta(html: string, attr: string, value: string): string | undefi
   return undefined;
 }
 
-/**
- * Attempts to extract the page title from a <title> tag.
- */
 function extractTitle(html: string): string | undefined {
   const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   return m?.[1]?.trim() || undefined;
 }
 
-/**
- * Attempts to fetch and parse basic metadata from the given URL.
- * Returns null on any failure — never throws.
- */
 export async function fetchUrlMetadata(url: string): Promise<UrlMetadata | null> {
   try {
     const controller = new AbortController();

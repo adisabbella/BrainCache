@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** Allowed category values (from requirements §FR-ORG-01). */
 export const CATEGORIES = [
   'Education',
   'Technology',
@@ -24,7 +23,6 @@ export const CATEGORIES = [
 
 export type Category = (typeof CATEGORIES)[number];
 
-/** Zod schema for a single normalized tag. */
 const tagSchema = z
   .string()
   .trim()
@@ -32,7 +30,6 @@ const tagSchema = z
   .max(50, 'Each tag must be at most 50 characters.')
   .transform((t) => t.toLowerCase().replace(/\s+/g, '-'));
 
-/** Schema for creating a new content item. */
 export const CreateContentSchema = z.object({
   url: z
     .string()
@@ -59,12 +56,11 @@ export const CreateContentSchema = z.object({
     .array(tagSchema)
     .max(20, 'You can add at most 20 tags.')
     .default([])
-    .transform((tags) => [...new Set(tags)]), // deduplicate
+    .transform((tags) => [...new Set(tags)]),
 
   note: z.string().trim().max(5000, 'Note must be at most 5000 characters.').optional(),
 });
 
-/** Schema for updating an existing content item (all fields optional). */
 export const UpdateContentSchema = z
   .object({
     title: z.string().trim().max(500).optional(),
@@ -84,10 +80,8 @@ export const UpdateContentSchema = z
 export type CreateContentInput = z.infer<typeof CreateContentSchema>;
 export type UpdateContentInput = z.infer<typeof UpdateContentSchema>;
 
-/** Maximum number of items per page the server will honour. */
 export const MAX_PAGE_LIMIT = 100;
 
-/** Schema for GET /api/content query parameters. */
 export const ContentQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
 
@@ -103,7 +97,7 @@ export const ContentQuerySchema = z.object({
     .string()
     .optional()
     .transform((v) => (v !== undefined ? parseInt(v, 10) : 1))
-    .pipe(z.number().int().min(1, 'page must be at least 1').default(1)),
+    .pipe(z.number().int().min(1, 'page must be at least 1')),
 
   limit: z
     .string()
@@ -115,7 +109,6 @@ export const ContentQuerySchema = z.object({
         .int()
         .min(1, 'limit must be at least 1')
         .max(MAX_PAGE_LIMIT, `limit must be at most ${MAX_PAGE_LIMIT}`)
-        .default(20)
     ),
 });
 

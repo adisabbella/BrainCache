@@ -11,7 +11,7 @@ export interface IContent extends Document {
   tags: string[];
   note?: string;
   thumbnailUrl?: string;
-  // Sharing — isShared flag + SHA-256 hash of the raw token (token itself lives only in the URL).
+  // Shares store only the SHA-256 hash; the raw token lives only in the public URL.
   isShared: boolean;
   shareTokenHash?: string;
   createdAt: Date;
@@ -73,7 +73,6 @@ const contentSchema = new Schema<IContent>(
       type: Boolean,
       default: false,
     },
-    // Stores SHA-256(rawToken). The raw token is only ever in the public URL.
     shareTokenHash: {
       type: String,
     },
@@ -83,19 +82,12 @@ const contentSchema = new Schema<IContent>(
   }
 );
 
-// ── Indexes ──────────────────────────────────────────────────────────────────
-
 // Unique compound index: prevents a user from saving the same URL twice.
 contentSchema.index({ userId: 1, normalizedUrl: 1 }, { unique: true });
-
-// Supports listing a user's content (default sort by newest).
 contentSchema.index({ userId: 1, createdAt: -1 });
-
-// Supports category filtering.
 contentSchema.index({ userId: 1, category: 1, createdAt: -1 });
 
-// Text search index across the searchable fields (Milestone 4).
-// MongoDB allows only one text index per collection; all fields go here.
+// MongoDB allows only one text index per collection; all searchable fields go here.
 contentSchema.index(
   {
     title: 'text',
@@ -110,7 +102,7 @@ contentSchema.index(
   }
 );
 
-// Sparse unique index: allows efficient lookup by token hash; sparse so null rows are ignored.
+// Sparse so documents without a shareTokenHash don't consume index space.
 contentSchema.index({ shareTokenHash: 1 }, { unique: true, sparse: true });
 
 export const Content: Model<IContent> = model<IContent>('Content', contentSchema);

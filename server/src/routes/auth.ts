@@ -7,13 +7,9 @@ import { LoginSchema, RegisterSchema } from '../validators/authSchemas';
 
 const router = Router();
 
-/**
- * Rate limiter for auth endpoints.
- * 10 requests per 15 minutes per IP — strict enough to slow brute-force
- * without blocking normal development usage.
- */
+// 10 requests per 15 minutes per IP — slows brute-force without blocking normal use.
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
@@ -26,26 +22,9 @@ const authLimiter = rateLimit({
   },
 });
 
-// POST /api/auth/register
-router.post(
-  '/register',
-  authLimiter,
-  validate(RegisterSchema),
-  authController.register
-);
-
-// POST /api/auth/login
-router.post(
-  '/login',
-  authLimiter,
-  validate(LoginSchema),
-  authController.login
-);
-
-// POST /api/auth/logout
+router.post('/register', authLimiter, validate(RegisterSchema), authController.register);
+router.post('/login', authLimiter, validate(LoginSchema), authController.login);
 router.post('/logout', authenticate, authController.logout);
-
-// GET /api/auth/me
 router.get('/me', authenticate, authController.me);
 
 export default router;

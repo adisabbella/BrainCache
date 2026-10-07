@@ -4,101 +4,75 @@ import { ContentQuerySchema } from '../validators/contentSchemas';
 import type { CreateContentInput, UpdateContentInput } from '../validators/contentSchemas';
 
 export const contentController = {
-  /** GET /api/content — list, search, filter, and paginate content for the authenticated user */
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Parse and validate query parameters; use safe defaults on missing/invalid values.
       const parsed = ContentQuerySchema.safeParse(req.query);
       if (!parsed.success) {
         res.status(400).json({
           success: false,
           error: {
             code: 'VALIDATION_ERROR',
-            message: parsed.error.errors[0]?.message ?? 'Invalid query parameters.',
+            message: parsed.error.issues[0]?.message ?? 'Invalid query parameters.',
           },
         });
         return;
       }
 
-      const { items, pagination } = await contentService.listForUserWithQuery(
+      const { items, pagination } = await contentService.listForUser(
         req.user!.userId,
         parsed.data
       );
 
-      res.status(200).json({
-        success: true,
-        data: { items, pagination },
-      });
+      res.status(200).json({ success: true, data: { items, pagination } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** GET /api/content/random — return a random item from the authenticated user's content */
   async getRandom(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const item = await contentService.getRandom(req.user!.userId);
 
       if (!item) {
-        // User has no saved content — return a controlled empty response.
-        res.status(200).json({
-          success: true,
-          data: { content: null, empty: true },
-        });
+        res.status(200).json({ success: true, data: { content: null, empty: true } });
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        data: { content: item, empty: false },
-      });
+      res.status(200).json({ success: true, data: { content: item, empty: false } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** GET /api/content/:id — get a single content item */
   async getOne(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const item = await contentService.getOne(req.user!.userId, req.params['id'] as string);
-      res.status(200).json({
-        success: true,
-        data: { item },
-      });
+      res.status(200).json({ success: true, data: { item } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** POST /api/content — create a new content item */
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const input = req.body as CreateContentInput;
       const item = await contentService.create(req.user!.userId, input);
-      res.status(201).json({
-        success: true,
-        data: { item },
-      });
+      res.status(201).json({ success: true, data: { item } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** PATCH /api/content/:id — update an existing content item */
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const input = req.body as UpdateContentInput;
       const item = await contentService.update(req.user!.userId, req.params['id'] as string, input);
-      res.status(200).json({
-        success: true,
-        data: { item },
-      });
+      res.status(200).json({ success: true, data: { item } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** DELETE /api/content/:id — delete a content item */
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       await contentService.delete(req.user!.userId, req.params['id'] as string);
@@ -108,7 +82,6 @@ export const contentController = {
     }
   },
 
-  /** POST /api/content/:id/share — enable public sharing */
   async enableSharing(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { shareToken } = await contentService.enableSharing(
@@ -116,16 +89,12 @@ export const contentController = {
         req.params['id'] as string
       );
       // Return the frontend-facing share URL path (not the raw API path).
-      res.status(200).json({
-        success: true,
-        data: { shareUrl: `/share/${shareToken}` },
-      });
+      res.status(200).json({ success: true, data: { shareUrl: `/share/${shareToken}` } });
     } catch (err) {
       next(err);
     }
   },
 
-  /** DELETE /api/content/:id/share — disable public sharing */
   async disableSharing(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       await contentService.disableSharing(req.user!.userId, req.params['id'] as string);
@@ -135,14 +104,10 @@ export const contentController = {
     }
   },
 
-  /** GET /api/share/:token — public endpoint, no auth required */
   async getPublicByToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const content = await contentService.getPublicByToken(req.params['token'] as string);
-      res.status(200).json({
-        success: true,
-        data: { content },
-      });
+      res.status(200).json({ success: true, data: { content } });
     } catch (err) {
       next(err);
     }

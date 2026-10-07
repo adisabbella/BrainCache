@@ -27,11 +27,6 @@ function toSafeUser(user: { _id: unknown; username: string; email: string }): Sa
 }
 
 export const authService = {
-  /**
-   * Registers a new user.
-   * Hashes the password before storing.
-   * Throws 409 CONFLICT on duplicate username or email.
-   */
   async register(input: RegisterInput): Promise<SafeUser> {
     const normalizedEmail = input.email.toLowerCase().trim();
 
@@ -50,7 +45,6 @@ export const authService = {
     }
 
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
-
     const user = await userRepository.create({
       username: input.username,
       email: normalizedEmail,
@@ -60,15 +54,12 @@ export const authService = {
     return toSafeUser(user);
   },
 
-  /**
-   * Verifies email + password and returns the safe user on success.
-   * Always throws 401 on failure — no distinction between wrong email or password.
-   */
   async login(input: LoginInput): Promise<SafeUser> {
     const user = await userRepository.findByEmail(input.email);
 
     if (!user) {
-      // Use the same timing path as a real user to avoid timing attacks
+      // Run a dummy hash to match timing of a real bcrypt comparison, preventing
+      // timing attacks that could reveal whether an email exists.
       await bcrypt.hash('dummy', BCRYPT_ROUNDS);
       throw new AppError(401, 'AUTHENTICATION_ERROR', 'Invalid email or password.');
     }
@@ -81,14 +72,12 @@ export const authService = {
     return toSafeUser(user);
   },
 
-  /** Creates a signed JWT containing only the user ID. */
   createToken(userId: string): string {
     return jwt.sign({ userId } as JwtPayload, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as jwt.SignOptions['expiresIn'],
     });
   },
 
-  /** Verifies a JWT and returns the payload, or throws 401 on failure. */
   verifyToken(token: string): JwtPayload {
     try {
       return jwt.verify(token, config.jwtSecret) as JwtPayload;
@@ -97,7 +86,6 @@ export const authService = {
     }
   },
 
-  /** Returns the safe user profile for the given userId. */
   async getMe(userId: string): Promise<SafeUser> {
     const user = await userRepository.findById(userId);
     if (!user) {

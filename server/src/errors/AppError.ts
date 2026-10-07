@@ -1,7 +1,3 @@
-/**
- * Known application error codes.
- * These map to specific HTTP status codes in the error handler.
- */
 export type ErrorCode =
   | 'VALIDATION_ERROR'
   | 'AUTHENTICATION_ERROR'
@@ -11,10 +7,6 @@ export type ErrorCode =
   | 'RATE_LIMIT'
   | 'INTERNAL_ERROR';
 
-/**
- * Structured application error.
- * Thrown by services/controllers and caught by the centralized error handler.
- */
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: ErrorCode;
