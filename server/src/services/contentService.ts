@@ -1,9 +1,11 @@
 import { AppError } from '../errors/AppError';
 import { contentRepository } from '../repositories/contentRepository';
+import { fetchUrlMetadata } from '../utils/metadata';
+import { generateShareToken, hashShareToken } from '../utils/shareToken';
 import { normalizeUrl } from '../utils/normalizeUrl';
 import type { ContentQueryInput, CreateContentInput, UpdateContentInput } from '../validators/contentSchemas';
 
-/** Safe public shape of a content item returned to clients. */
+/** Safe shape returned to the authenticated owner. Includes isShared status. */
 export interface SafeContent {
   id: string;
   userId: string;
@@ -14,8 +16,24 @@ export interface SafeContent {
   category: string;
   tags: string[];
   note?: string;
+  thumbnailUrl?: string;
+  isShared: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Safe public shape — never exposes userId, note, or any internal fields.
+ * Only returned via the public share endpoint.
+ */
+export interface PublicContent {
+  title?: string;
+  description?: string;
+  url: string;
+  domain?: string;
+  category: string;
+  tags: string[];
+  thumbnailUrl?: string;
 }
 
 /** Pagination metadata included in collection responses. */
@@ -38,6 +56,8 @@ function toSafeContent(doc: {
   category: string;
   tags: string[];
   note?: string;
+  thumbnailUrl?: string;
+  isShared: boolean;
   createdAt: Date;
   updatedAt: Date;
 }): SafeContent {
@@ -51,8 +71,30 @@ function toSafeContent(doc: {
     category: doc.category,
     tags: doc.tags,
     note: doc.note,
+    thumbnailUrl: doc.thumbnailUrl,
+    isShared: doc.isShared,
     createdAt: doc.createdAt.toISOString(),
     updatedAt: doc.updatedAt.toISOString(),
+  };
+}
+
+function toPublicContent(doc: {
+  url: string;
+  title?: string;
+  description?: string;
+  domain?: string;
+  category: string;
+  tags: string[];
+  thumbnailUrl?: string;
+}): PublicContent {
+  return {
+    title: doc.title,
+    description: doc.description,
+    url: doc.url,
+    domain: doc.domain,
+    category: doc.category,
+    tags: doc.tags,
+    thumbnailUrl: doc.thumbnailUrl,
   };
 }
 
@@ -107,14 +149,31 @@ export const contentService = {
   async create(userId: string, input: CreateContentInput): Promise<SafeContent> {
     const normalized = normalizeUrl(input.url);
 
-    // Extract domain from the URL for storage.
+    // --- Metadata extraction (best-effort, never blocks save) ---
+    // Run metadata fetch concurrently. If it fails for any reason, proceed anyway.
+    let metadata: Awaited<ReturnType<typeof fetchUrlMetadata>> = null;
+    try {
+      metadata = await fetchUrlMetadata(input.url);
+    } catch {
+      // Swallow — metadata is optional enrichment.
+    }
+
+    // User-supplied values take priority over extracted metadata.
+    const title = input.title || metadata?.title || undefined;
+    const description = input.description || metadata?.description || undefined;
+    const thumbnailUrl = metadata?.thumbnailUrl || undefined;
+
     let domain = input.domain;
     if (!domain) {
-      try {
-        domain = new URL(input.url).hostname.replace(/^www\./, '');
-      } catch {
-        domain = undefined;
-      }
+      domain =
+        metadata?.domain ||
+        (() => {
+          try {
+            return new URL(input.url).hostname.replace(/^www\./, '');
+          } catch {
+            return undefined;
+          }
+        })();
     }
 
     try {
@@ -122,9 +181,10 @@ export const contentService = {
         userId,
         url: input.url,
         normalizedUrl: normalized,
-        title: input.title,
-        description: input.description,
+        title,
+        description,
         domain,
+        thumbnailUrl,
         category: input.category,
         tags: input.tags,
         note: input.note,
@@ -172,5 +232,55 @@ export const contentService = {
     }
 
     await contentRepository.deleteById(contentId);
+  },
+
+  /**
+   * Enables public sharing for a content item.
+   * Generates a cryptographically secure token, stores only its hash.
+   * Returns the raw token (caller embeds it in the public URL).
+   */
+  async enableSharing(userId: string, contentId: string): Promise<{ shareToken: string }> {
+    const existing = await contentRepository.findById(contentId);
+    if (!existing || String(existing.userId) !== userId) {
+      throw new AppError(404, 'NOT_FOUND', 'Content not found.');
+    }
+
+    const rawToken = generateShareToken();
+    const tokenHash = hashShareToken(rawToken);
+
+    const updated = await contentRepository.enableSharing(contentId, tokenHash);
+    if (!updated) {
+      throw new AppError(404, 'NOT_FOUND', 'Content not found.');
+    }
+
+    return { shareToken: rawToken };
+  },
+
+  /**
+   * Disables public sharing for a content item.
+   * Immediately invalidates any previously issued share links.
+   */
+  async disableSharing(userId: string, contentId: string): Promise<void> {
+    const existing = await contentRepository.findById(contentId);
+    if (!existing || String(existing.userId) !== userId) {
+      throw new AppError(404, 'NOT_FOUND', 'Content not found.');
+    }
+
+    await contentRepository.disableSharing(contentId);
+  },
+
+  /**
+   * Retrieves the public representation of a shared content item by raw token.
+   * Returns only safe public fields — never exposes userId, note, or internals.
+   * Returns 404 whether the token doesn't exist OR sharing has been disabled,
+   * so callers cannot probe for token existence.
+   */
+  async getPublicByToken(rawToken: string): Promise<PublicContent> {
+    const tokenHash = hashShareToken(rawToken);
+    const item = await contentRepository.findByShareTokenHash(tokenHash);
+    if (!item) {
+      throw new AppError(404, 'NOT_FOUND', 'Shared content not found.');
+    }
+    return toPublicContent(item);
   },
 };

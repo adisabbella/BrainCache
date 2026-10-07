@@ -10,10 +10,10 @@ export interface IContent extends Document {
   category: string;
   tags: string[];
   note?: string;
-  // Sharing fields — stored in the schema per the design doc, but
-  // sharing functionality is NOT implemented until a later milestone.
+  thumbnailUrl?: string;
+  // Sharing — isShared flag + SHA-256 hash of the raw token (token itself lives only in the URL).
   isShared: boolean;
-  shareToken?: string;
+  shareTokenHash?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -65,13 +65,16 @@ const contentSchema = new Schema<IContent>(
       trim: true,
       maxlength: 5000,
     },
-    // Sharing fields present in the schema per the database design doc.
-    // The sharing feature itself is NOT implemented in this milestone.
+    thumbnailUrl: {
+      type: String,
+      trim: true,
+    },
     isShared: {
       type: Boolean,
       default: false,
     },
-    shareToken: {
+    // Stores SHA-256(rawToken). The raw token is only ever in the public URL.
+    shareTokenHash: {
       type: String,
     },
   },
@@ -106,5 +109,8 @@ contentSchema.index(
     weights: { title: 10, tags: 5, domain: 3, description: 2, note: 1 },
   }
 );
+
+// Sparse unique index: allows efficient lookup by token hash; sparse so null rows are ignored.
+contentSchema.index({ shareTokenHash: 1 }, { unique: true, sparse: true });
 
 export const Content: Model<IContent> = model<IContent>('Content', contentSchema);

@@ -8,6 +8,8 @@ export interface ContentItem {
   category: string;
   tags: string[];
   note?: string;
+  thumbnailUrl?: string;
+  isShared: boolean;
   createdAt: string;
   updatedAt: string;
 }

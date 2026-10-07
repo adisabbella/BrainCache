@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import SharePage from './pages/SharePage';
 
 export default function App() {
   return (
@@ -13,6 +14,9 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+
+          {/* Public share route — no auth required */}
+          <Route path="/share/:token" element={<SharePage />} />
 
           {/* Protected routes */}
           <Route

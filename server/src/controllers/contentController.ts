@@ -107,4 +107,44 @@ export const contentController = {
       next(err);
     }
   },
+
+  /** POST /api/content/:id/share — enable public sharing */
+  async enableSharing(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { shareToken } = await contentService.enableSharing(
+        req.user!.userId,
+        req.params['id'] as string
+      );
+      // Return the frontend-facing share URL path (not the raw API path).
+      res.status(200).json({
+        success: true,
+        data: { shareUrl: `/share/${shareToken}` },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** DELETE /api/content/:id/share — disable public sharing */
+  async disableSharing(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await contentService.disableSharing(req.user!.userId, req.params['id'] as string);
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** GET /api/share/:token — public endpoint, no auth required */
+  async getPublicByToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const content = await contentService.getPublicByToken(req.params['token'] as string);
+      res.status(200).json({
+        success: true,
+        data: { content },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

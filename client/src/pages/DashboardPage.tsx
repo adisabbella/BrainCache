@@ -42,6 +42,13 @@ export default function DashboardPage() {
   const [randomError, setRandomError] = useState<string | null>(null);
   const [showRandom, setShowRandom] = useState(false);
 
+  // ── Share state ───────────────────────────────────────────────────────────────
+  // Tracks which item IDs are currently undergoing a share toggle.
+  const [shareLoadingIds, setShareLoadingIds] = useState<Set<string>>(new Set());
+  // After enabling sharing, stores the generated share URL per item.
+  // Key: item ID, Value: full window.origin + path (e.g. http://localhost:5173/share/token)
+  const [shareUrls, setShareUrls] = useState<Record<string, string>>({});
+
   // ── Debounce search input by ~300 ms ─────────────────────────────────────────
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -158,7 +165,50 @@ export default function DashboardPage() {
       page: 1,
       limit: 20,
     });
-    setPage(1);
+  }
+
+  // ── Share toggle ─────────────────────────────────────────────────────────────
+
+  async function handleShareToggle(item: ContentItem) {
+    // Prevent double-clicks
+    if (shareLoadingIds.has(item.id)) return;
+    setShareLoadingIds((prev) => new Set(prev).add(item.id));
+
+    if (item.isShared) {
+      // Disable sharing
+      const { error } = await contentApi.disableSharing(item.id);
+      if (!error) {
+        // Update local item state
+        setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, isShared: false } : i));
+        setShareUrls((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
+      } else {
+        alert(`Could not disable sharing: ${error}`);
+      }
+    } else {
+      // Enable sharing
+      const { data, error } = await contentApi.enableSharing(item.id);
+      if (data?.shareUrl) {
+        const fullUrl = `${window.location.origin}${data.shareUrl}`;
+        setShareUrls((prev) => ({ ...prev, [item.id]: fullUrl }));
+        setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, isShared: true } : i));
+        // Copy to clipboard immediately
+        navigator.clipboard.writeText(fullUrl).catch(() => undefined);
+      } else {
+        alert(`Could not enable sharing: ${error}`);
+      }
+    }
+
+    setShareLoadingIds((prev) => { const next = new Set(prev); next.delete(item.id); return next; });
+  }
+
+  async function handleCopyShareLink(item: ContentItem) {
+    const url = shareUrls[item.id];
+    if (url) {
+      await navigator.clipboard.writeText(url).catch(() => undefined);
+      return;
+    }
+    // If we don't have the URL cached (e.g., page reload), re-enable to get a fresh token
+    await handleShareToggle(item);
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -293,6 +343,10 @@ export default function DashboardPage() {
                 onDeleteConfirm={handleDelete}
                 onDeleteCancel={() => setDeleteConfirmId(null)}
                 isSearchActive={isSearchActive}
+                onShareToggle={handleShareToggle}
+                onCopyShareLink={handleCopyShareLink}
+                shareLoadingIds={shareLoadingIds}
+                shareUrls={shareUrls}
               />
 
               {/* Pagination controls */}
@@ -434,6 +488,10 @@ function ContentList({
   onDeleteConfirm,
   onDeleteCancel,
   isSearchActive,
+  onShareToggle,
+  onCopyShareLink,
+  shareLoadingIds,
+  shareUrls,
 }: {
   items: ContentItem[];
   loading: boolean;
@@ -445,6 +503,10 @@ function ContentList({
   onDeleteConfirm: (id: string) => void;
   onDeleteCancel: () => void;
   isSearchActive: boolean;
+  onShareToggle: (item: ContentItem) => void;
+  onCopyShareLink: (item: ContentItem) => void;
+  shareLoadingIds: Set<string>;
+  shareUrls: Record<string, string>;
 }) {
   if (loading) return <p style={s.muted}>Loading your content…</p>;
   if (error) return (
@@ -479,8 +541,36 @@ function ContentList({
             <div style={s.cardMeta}>
               <span style={s.categoryBadge}>{item.category}</span>
               {item.domain && <span style={s.domain}>{item.domain}</span>}
+              {item.isShared && (
+                <span style={s.sharedBadge} title="Publicly shared">🔗 Shared</span>
+              )}
             </div>
             <div style={s.cardActions}>
+              {/* Share / unshare toggle */}
+              <button
+                id={`share-btn-${item.id}`}
+                onClick={() => onShareToggle(item)}
+                disabled={shareLoadingIds.has(item.id)}
+                style={{
+                  ...s.iconBtn,
+                  color: item.isShared ? '#34d399' : 'rgba(255,255,255,0.35)',
+                  opacity: shareLoadingIds.has(item.id) ? 0.5 : 1,
+                }}
+                title={item.isShared ? 'Disable sharing' : 'Enable sharing'}
+              >
+                {shareLoadingIds.has(item.id) ? '⏳' : item.isShared ? '🔓' : '🔒'}
+              </button>
+              {/* Copy link — only visible when shared */}
+              {item.isShared && (
+                <button
+                  id={`copy-link-btn-${item.id}`}
+                  onClick={() => onCopyShareLink(item)}
+                  style={{ ...s.iconBtn, color: '#818cf8' }}
+                  title="Copy share link"
+                >
+                  📋
+                </button>
+              )}
               <button
                 id={`edit-btn-${item.id}`}
                 onClick={() => onEdit(item)}
@@ -515,6 +605,19 @@ function ContentList({
           )}
 
           {item.note && <p style={s.note}>📝 {item.note}</p>}
+
+          {/* Show share URL when available (just enabled) */}
+          {item.isShared && shareUrls[item.id] && (
+            <div style={s.shareRow}>
+              <span style={s.shareUrl}>{shareUrls[item.id]}</span>
+              <button
+                onClick={() => onCopyShareLink(item)}
+                style={s.copyBtn}
+              >
+                Copy
+              </button>
+            </div>
+          )}
 
           <p style={s.timestamp}>
             Saved {new Date(item.createdAt).toLocaleDateString()}
@@ -853,4 +956,9 @@ const s: Record<string, React.CSSProperties> = {
   input: { backgroundColor: '#0f0f11', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem', padding: '0.5rem 0.75rem', fontSize: '0.875rem', color: 'white', width: '100%', boxSizing: 'border-box' },
   fieldError: { fontSize: '0.875rem', color: '#f87171', margin: 0 },
   btnRow: { display: 'flex', gap: '0.5rem', paddingTop: '0.5rem' },
+  // Sharing
+  sharedBadge: { fontSize: '0.7rem', fontWeight: 500, color: '#34d399', backgroundColor: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: '9999px', padding: '0.1rem 0.5rem' },
+  shareRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.15)', borderRadius: '0.5rem', padding: '0.4rem 0.6rem' },
+  shareUrl: { fontSize: '0.75rem', color: '#818cf8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+  copyBtn: { backgroundColor: 'rgba(129,140,248,0.15)', border: '1px solid rgba(129,140,248,0.25)', borderRadius: '0.375rem', padding: '0.2rem 0.5rem', fontSize: '0.75rem', color: '#818cf8', cursor: 'pointer', flexShrink: 0 },
 };

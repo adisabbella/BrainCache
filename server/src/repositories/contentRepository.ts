@@ -65,6 +65,7 @@ export const contentRepository = {
     title?: string;
     description?: string;
     domain?: string;
+    thumbnailUrl?: string;
     category: string;
     tags: string[];
     note?: string;
@@ -108,5 +109,39 @@ export const contentRepository = {
     return Content.find({ userId: new Types.ObjectId(userId) })
       .sort({ createdAt: -1 })
       .exec();
+  },
+
+  /**
+   * Enables sharing on a content item: stores the token hash and sets isShared=true.
+   * Returns the updated document.
+   */
+  async enableSharing(id: string, shareTokenHash: string): Promise<IContent | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return Content.findByIdAndUpdate(
+      id,
+      { $set: { isShared: true, shareTokenHash } },
+      { new: true, runValidators: true }
+    ).exec();
+  },
+
+  /**
+   * Disables sharing on a content item: clears token hash and sets isShared=false.
+   * Returns the updated document.
+   */
+  async disableSharing(id: string): Promise<IContent | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return Content.findByIdAndUpdate(
+      id,
+      { $set: { isShared: false }, $unset: { shareTokenHash: '' } },
+      { new: true }
+    ).exec();
+  },
+
+  /**
+   * Finds shared content by the SHA-256 hash of the share token.
+   * Returns null if not found or sharing is disabled.
+   */
+  async findByShareTokenHash(tokenHash: string): Promise<IContent | null> {
+    return Content.findOne({ shareTokenHash: tokenHash, isShared: true }).exec();
   },
 };

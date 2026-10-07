@@ -59,6 +59,16 @@ export interface RandomContentResponse {
   empty: boolean;
 }
 
+export interface PublicContentItem {
+  title?: string;
+  description?: string;
+  url: string;
+  domain?: string;
+  category: string;
+  tags: string[];
+  thumbnailUrl?: string;
+}
+
 export const contentApi = {
   list: (params?: ContentListParams) => {
     const qs = new URLSearchParams();
@@ -90,4 +100,26 @@ export const contentApi = {
 
   delete: (id: string) =>
     request<null>(`/api/content/${id}`, { method: 'DELETE' }),
+
+  enableSharing: (id: string) =>
+    request<{ shareUrl: string }>(`/api/content/${id}/share`, { method: 'POST' }),
+
+  disableSharing: (id: string) =>
+    request<null>(`/api/content/${id}/share`, { method: 'DELETE' }),
 };
+
+/** Fetch public share data — no auth cookies sent. */
+export async function getSharedContent(
+  token: string
+): Promise<{ data: PublicContentItem | null; error: string | null }> {
+  try {
+    const res = await fetch(`/api/share/${token}`);
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      return { data: null, error: json?.error?.message ?? 'Content not found.' };
+    }
+    return { data: json.data.content as PublicContentItem, error: null };
+  } catch {
+    return { data: null, error: 'Network error.' };
+  }
+}

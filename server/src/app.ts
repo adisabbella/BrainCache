@@ -6,6 +6,7 @@ import { errorHandler } from './middleware/errorHandler';
 import authRouter from './routes/auth';
 import contentRouter from './routes/content';
 import healthRouter from './routes/health';
+import shareRouter from './routes/share';
 
 /**
  * Creates and configures the Express application.
@@ -37,6 +38,8 @@ export function createApp() {
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/content', contentRouter);
+  // Public share endpoint — no auth middleware on this router.
+  app.use('/api/share', shareRouter);
 
   // ── 404 fallback ────────────────────────────────────────────────────────
   app.use((_req, res) => {

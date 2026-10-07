@@ -29,4 +29,10 @@ router.patch('/:id', validate(UpdateContentSchema), contentController.update);
 // DELETE /api/content/:id
 router.delete('/:id', contentController.delete);
 
+// POST /api/content/:id/share — enable sharing
+router.post('/:id/share', contentController.enableSharing);
+
+// DELETE /api/content/:id/share — disable sharing
+router.delete('/:id/share', contentController.disableSharing);
+
 export default router;
