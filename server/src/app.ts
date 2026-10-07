@@ -4,6 +4,7 @@ import express from 'express';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 import authRouter from './routes/auth';
+import contentRouter from './routes/content';
 import healthRouter from './routes/health';
 
 /**
@@ -35,6 +36,7 @@ export function createApp() {
   // ── Routes ──────────────────────────────────────────────────────────────
   app.use('/api/health', healthRouter);
   app.use('/api/auth', authRouter);
+  app.use('/api/content', contentRouter);
 
   // ── 404 fallback ────────────────────────────────────────────────────────
   app.use((_req, res) => {

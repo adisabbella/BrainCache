@@ -1,0 +1,27 @@
+import { Router } from 'express';
+import { contentController } from '../controllers/contentController';
+import { authenticate } from '../middleware/authenticate';
+import { validate } from '../middleware/validate';
+import { CreateContentSchema, UpdateContentSchema } from '../validators/contentSchemas';
+
+const router = Router();
+
+// All content endpoints require authentication.
+router.use(authenticate);
+
+// GET /api/content
+router.get('/', contentController.list);
+
+// GET /api/content/:id
+router.get('/:id', contentController.getOne);
+
+// POST /api/content
+router.post('/', validate(CreateContentSchema), contentController.create);
+
+// PATCH /api/content/:id
+router.patch('/:id', validate(UpdateContentSchema), contentController.update);
+
+// DELETE /api/content/:id
+router.delete('/:id', contentController.delete);
+
+export default router;
